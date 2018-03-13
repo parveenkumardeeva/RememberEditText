@@ -25,10 +25,9 @@ import android.widget.TextView;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
-public class RememberEditText extends EditText {
-
-    private static final String PREFERENCE_KEY = "RememberEditText";
+public class RememberEditText<T> extends EditText {
 
     private int mRememberCount = 1;
     private String mRememberId;
@@ -36,6 +35,7 @@ public class RememberEditText extends EditText {
     private Drawable mDeleteDrawable;
     private Drawable mDropDownDrawable;
     private Drawable mDropUpDrawable;
+    private EditTextListener editTextListener;
 
     private PopupWindow pop;
     private Rect mDropDownIconRect = new Rect();
@@ -49,21 +49,18 @@ public class RememberEditText extends EditText {
     private static final int DEFAULT_REMEMBER_COUNT = 3;
     private static final int DEFAULT_ICON_MARGIN_IN_DP = 15;
 
-    private static PersistedMap mCacheMap;
-    protected List<String> mCacheDataList;
+    private Map<String, T> mCacheMap;
+
+    protected List<T> mCacheDataList;
 
     public RememberEditText(Context context, AttributeSet attrs) {
         super(context, attrs);
         initAttrs(attrs);
-        initCacheMap(context);
-        initData();
     }
 
     public RememberEditText(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         initAttrs(attrs);
-        initCacheMap(context);
-        initData();
     }
 
     private void initAttrs(AttributeSet attrs) {
@@ -100,6 +97,10 @@ public class RememberEditText extends EditText {
         }
     }
 
+    public void setEditTextListener(EditTextListener editTextListener) {
+        this.editTextListener = editTextListener;
+    }
+
     /**
      * restore last recent input
      */
@@ -110,17 +111,17 @@ public class RememberEditText extends EditText {
 
         mCacheDataList = new LinkedList<>();
 
-        String lastCache = mCacheMap.get(mRememberId);
+        T lastCache = mCacheMap.get(mRememberId);
 
         if (mAutoFill) {
-            setText(lastCache);
+            editTextListener.onEditTextInit(lastCache);
         }
 
         if (lastCache != null) {
             mCacheDataList.add(0, lastCache);
             // Retrieve all history data
             for (int i = 1; i < mRememberCount; ++i) {
-                String data = mCacheMap.get(mRememberId + i);
+                T data = mCacheMap.get(mRememberId + i);
                 if (data != null) {
                     mCacheDataList.add(i, data);
                 }
@@ -150,15 +151,25 @@ public class RememberEditText extends EditText {
         String text = getText().toString();
         // save newest input to default key
         if (text.length() > 0) {
-            mCacheMap.put(mRememberId, text);
-            if (mCacheDataList.isEmpty() || !text.equals(mCacheDataList.get(0))) {
-                mCacheDataList.add(0, text);
-            }
+            editTextListener.onEditTextDetach(text);
         }
         // flush history
         for (int i = 1; i < mCacheDataList.size(); ++i) {
             mCacheMap.put(mRememberId + i, mCacheDataList.get(i));
         }
+    }
+
+    /**
+     * Save the complete data to mCacheMap
+     *
+     * @param t
+     */
+    public void putDataToCacheMap(T t) {
+        mCacheMap.put(mRememberId, t);
+        if (mCacheDataList.isEmpty() || !t.equals(mCacheDataList.get(0))) {
+            mCacheDataList.add(0, t);
+        }
+        editTextListener.saveTheData(mCacheMap);
     }
 
     @Override
@@ -233,20 +244,20 @@ public class RememberEditText extends EditText {
      * Different from {@link Rect}'s contains method, it is more tolerant.
      */
     private boolean isInRect(Rect rect, int x, int y) {
-        return x > rect.left - mIconMargin / 2  && x < rect.right + mIconMargin / 2;
+        return x > rect.left - mIconMargin / 2 && x < rect.right + mIconMargin / 2;
     }
 
-    private static void initCacheMap(Context context) {
+    public void initCacheMap(Map<String, T> mCacheMap) {
         if (mCacheMap == null) {
-            mCacheMap = new PersistedMap(context, PREFERENCE_KEY);
+            this.mCacheMap = mCacheMap;
         }
+        initData();
     }
 
     /**
      * Clear all cache managed by RememberEditText.
      */
-    public static void clearCache(Context context) {
-        initCacheMap(context);
+    public void clearCache() {
         mCacheMap.clear();
     }
 
@@ -324,13 +335,14 @@ public class RememberEditText extends EditText {
 
     /**
      * Update EditText text after selected
+     *
      * @param position selected position in cached list
      * @return whether position is legal and event is handled
      */
     private boolean selectItem(int position) {
         disMissOrUpdatePopupWindow();
         if (position >= 0 && mCacheDataList.size() > position) {
-            setText(mCacheDataList.get(position));
+            editTextListener.onSelectItem(mCacheDataList.get(position));
             return true;
         }
         return false;
@@ -435,5 +447,15 @@ public class RememberEditText extends EditText {
                 wrapper.setId(position);
             }
         }
+    }
+
+    public interface EditTextListener<T> {
+        void onEditTextInit(T object);
+
+        void onEditTextDetach(String value);
+
+        void onSelectItem(T value);
+
+        void saveTheData(Map<String, T> mCacheMap);
     }
 }
